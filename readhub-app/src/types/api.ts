@@ -5,6 +5,9 @@ export interface Author {
   biography?: string;
   birthDate?: string;
   nationality?: string;
+  // Backend-specific fields
+  alive?: boolean;
+  displayName?: string;
 }
 
 export const BookStatus = {
@@ -21,12 +24,12 @@ export type BookStatus = typeof BookStatus[keyof typeof BookStatus];
 export interface Book {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   authors: Author[];
   categories: string[];
   language: string;
   filePath?: string;
-  tags: string[];
+  tags?: string[];
   coverUrl?: string;
   fileSize?: number;
   isbn?: string;
@@ -42,6 +45,9 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   version: number;
+  // Backend-specific fields
+  uploadedBy?: string;
+  published?: boolean;
 }
 
 export interface BookCreateDto {

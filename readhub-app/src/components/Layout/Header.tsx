@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  Search, 
   Bell, 
   User, 
   Menu,
@@ -12,18 +11,20 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { SearchBar } from '../SearchBar';
+import type { BookCardData } from '../../types/api';
 
 interface HeaderProps {
   onMobileMenuToggle?: () => void;
   isMobileMenuOpen?: boolean;
   onAddBook?: () => void;
+  onSearchResults?: (results: BookCardData[]) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onMobileMenuToggle,
   onAddBook,
+  onSearchResults,
 }) => {
-  const [showSearch, setShowSearch] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications] = useState(3); // Mock notification count
 
@@ -63,23 +64,18 @@ export const Header: React.FC<HeaderProps> = ({
               </motion.div>
             </div>
 
-            {/* Center section - Search (Desktop) */}
-            <div className="hidden md:flex flex-1 max-w-lg mx-8">
-              <SearchBar 
-                placeholder="Search books..."
-                showFilters={false}
-              />
+            {/* Center section - Search Bar */}
+            <div className="flex-1 max-w-2xl mx-8 hidden md:block">
+              {onSearchResults && (
+                <SearchBar 
+                  onSearchResults={onSearchResults}
+                  placeholder="Search books..."
+                />
+              )}
             </div>
 
             {/* Right section */}
             <div className="flex items-center space-x-2">
-              {/* Mobile search button */}
-              <button
-                onClick={() => setShowSearch(true)}
-                className="md:hidden p-2 rounded-lg hover:bg-neutral-100 transition-colors"
-              >
-                <Search className="w-5 h-5 text-neutral-600" />
-              </button>
 
               {/* Add book button */}
               <Button
@@ -125,7 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-floating border border-neutral-150 py-2"
+                    className="absolute right-0 mt-2 w-48 glass-dropdown rounded-xl py-2"
                   >
                     <div className="px-4 py-2 border-b border-neutral-100">
                       <p className="font-semibold text-neutral-900">John Doe</p>
@@ -152,38 +148,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
 
-      {/* Mobile search overlay */}
-      {showSearch && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-white md:hidden"
-        >
-          <div className="p-4">
-            <div className="flex items-center space-x-4 mb-4">
-              <button
-                onClick={() => setShowSearch(false)}
-                className="p-2 -ml-2 rounded-lg hover:bg-neutral-100 transition-colors"
-              >
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Search className="w-5 h-5 text-neutral-600 rotate-45" />
-                </motion.div>
-              </button>
-              <span className="font-semibold text-neutral-900">Search Books</span>
-            </div>
-            
-            <SearchBar 
-              autoFocus
-              placeholder="Search books, authors, categories..."
-              className="w-full"
-            />
-          </div>
-        </motion.div>
-      )}
     </>
   );
 };

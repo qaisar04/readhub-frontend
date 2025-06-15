@@ -32,7 +32,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({ isOpen, onClose }) =
   
   const createBookMutation = useCreateBook();
 
-  const handleInputChange = (field: keyof BookCreateDto, value: any) => {
+  const handleInputChange = (field: keyof BookCreateDto, value: string | number | Author[] | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 

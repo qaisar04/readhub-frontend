@@ -6,18 +6,22 @@ import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { HomePage } from './pages/HomePage';
 import { AddBookModal } from './components/AddBookModal';
+import type { BookCardData } from './types/api';
 
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error: any) => {
+      retry: (failureCount, error: unknown) => {
         // Don't retry on 4xx errors except 408, 429
-        if (error?.response?.status >= 400 && error?.response?.status < 500) {
-          if (error?.response?.status === 408 || error?.response?.status === 429) {
-            return failureCount < 2;
+        if (error && typeof error === 'object' && 'response' in error) {
+          const axiosError = error as { response?: { status?: number } };
+          if (axiosError.response?.status && axiosError.response.status >= 400 && axiosError.response.status < 500) {
+            if (axiosError.response.status === 408 || axiosError.response.status === 429) {
+              return failureCount < 2;
+            }
+            return false;
           }
-          return false;
         }
         return failureCount < 3;
       },
@@ -34,11 +38,17 @@ function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAddBookModalOpen, setIsAddBookModalOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<BookCardData[] | null>(null);
 
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
-        return <HomePage />;
+        return (
+          <HomePage 
+            searchResults={searchResults}
+            onClearSearch={() => setSearchResults(null)}
+          />
+        );
       case 'explore':
         return (
           <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
@@ -76,7 +86,12 @@ function App() {
           </div>
         );
       default:
-        return <HomePage />;
+        return (
+          <HomePage 
+            searchResults={searchResults}
+            onClearSearch={() => setSearchResults(null)}
+          />
+        );
     }
   };
 
@@ -96,6 +111,14 @@ function App() {
     setIsAddBookModalOpen(false);
   };
 
+  const handleSearchResults = (results: BookCardData[]) => {
+    setSearchResults(results);
+    // Switch to home tab if search is performed from another tab
+    if (activeTab !== 'home') {
+      setActiveTab('home');
+    }
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-neutral-50">
@@ -104,6 +127,7 @@ function App() {
           onMobileMenuToggle={handleMobileMenuToggle}
           isMobileMenuOpen={isMobileMenuOpen}
           onAddBook={handleOpenAddBookModal}
+          onSearchResults={handleSearchResults}
         />
         
         {/* Main Layout */}

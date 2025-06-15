@@ -45,7 +45,7 @@ apiClient.interceptors.response.use(
 );
 
 export class BookAPI {
-  // Core book operations (handled by coreRoutes - /books)
+  // Core book operations (coreRoutes: /books paths)
   static async createBook(data: BookCreateDto): Promise<Book> {
     const response: AxiosResponse<Book> = await apiClient.post('/books', data);
     return response.data;
@@ -60,10 +60,30 @@ export class BookAPI {
       ...params,
     };
     
-    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.get('/books', {
+    // Backend returns a simple array, not a paginated response
+    const response: AxiosResponse<Book[]> = await apiClient.get('/books', {
       params: queryParams,
     });
-    return response.data;
+    
+    // Transform the array response into a paginated format for frontend compatibility
+    const books = response.data || [];
+    const page = queryParams.page;
+    const size = queryParams.size;
+    const startIndex = page * size;
+    const endIndex = startIndex + size;
+    const paginatedBooks = books.slice(startIndex, endIndex);
+    
+    return {
+      content: paginatedBooks,
+      totalPages: Math.ceil(books.length / size),
+      totalElements: books.length,
+      size: size,
+      number: page,
+      first: page === 0,
+      last: endIndex >= books.length,
+      numberOfElements: paginatedBooks.length,
+      empty: books.length === 0,
+    };
   }
 
   static async getBookById(id: string): Promise<Book> {
@@ -80,31 +100,80 @@ export class BookAPI {
     await apiClient.delete(`/books/${id}`);
   }
 
-  // Search operations (handled by searchRoutes - /search)
+  // Search operations - Updated to match backend API spec
   static async searchBooks(searchDto: BookSearchDto): Promise<PaginatedResponse<Book>> {
-    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search', searchDto);
+    const { pagination, filters } = searchDto;
+    
+    // Use POST with request body as per backend spec
+    const requestBody = {
+      pagination,
+      filters: {
+        query: filters.searchQuery || ''
+      },
+      includeDeleted: searchDto.includeDeleted || false,
+      includeAuthors: searchDto.includeAuthors || true,
+      includeMetrics: searchDto.includeMetrics || true
+    };
+    
+    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search', requestBody);
     return response.data;
   }
 
-  static async searchByCategory(searchDto: BookSearchDto): Promise<PaginatedResponse<Book>> {
-    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-category', searchDto);
+  static async searchByCategory(categories: string[], pagination: Partial<PaginationDto> = {}): Promise<PaginatedResponse<Book>> {
+    const queryParams = {
+      categories: categories.join(','),
+      page: pagination.page || 0,
+      size: pagination.size || 20,
+      sortBy: pagination.sortBy || 'createdAt',
+      sortDirection: pagination.sortDirection || 'desc',
+    };
+    
+    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-category', {}, {
+      params: queryParams,
+    });
     return response.data;
   }
 
-  static async searchByLanguage(searchDto: BookSearchDto): Promise<PaginatedResponse<Book>> {
-    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-language', searchDto);
+  static async searchByLanguage(language: string, pagination: Partial<PaginationDto> = {}): Promise<PaginatedResponse<Book>> {
+    const queryParams = {
+      language,
+      page: pagination.page || 0,
+      size: pagination.size || 20,
+      sortBy: pagination.sortBy || 'createdAt',
+      sortDirection: pagination.sortDirection || 'desc',
+    };
+    
+    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-language', {}, {
+      params: queryParams,
+    });
     return response.data;
   }
 
-  static async searchByUploader(searchDto: BookSearchDto): Promise<PaginatedResponse<Book>> {
-    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-uploader', searchDto);
+  static async searchByUploader(uploadedBy: string, pagination: Partial<PaginationDto> = {}): Promise<PaginatedResponse<Book>> {
+    const queryParams = {
+      uploadedBy,
+      page: pagination.page || 0,
+      size: pagination.size || 20,
+      sortBy: pagination.sortBy || 'createdAt',
+      sortDirection: pagination.sortDirection || 'desc',
+    };
+    
+    const response: AxiosResponse<PaginatedResponse<Book>> = await apiClient.post('/search/by-uploader', {}, {
+      params: queryParams,
+    });
     return response.data;
   }
 
   // Meta operations (handled by metaRoutes)
   static async getTotalCount(): Promise<number> {
-    const response: AxiosResponse<number> = await apiClient.get('/books/count');
-    return response.data;
+    try {
+      const response: AxiosResponse<number> = await apiClient.get('/books/count');
+      return response.data;
+    } catch (error) {
+      // If count endpoint doesn't exist, get count from books array
+      const booksResponse: AxiosResponse<Book[]> = await apiClient.get('/books');
+      return booksResponse.data?.length || 0;
+    }
   }
 
   static async bookExists(id: string): Promise<boolean> {
@@ -145,15 +214,25 @@ const generateRequestId = (): string => {
 };
 
 // Error handler helper
-export const handleApiError = (error: any): ApiError => {
-  if (error.response?.data) {
-    return error.response.data as ApiError;
+export const handleApiError = (error: unknown): ApiError => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const axiosError = error as { response?: { data?: ApiError; status?: number } };
+    if (axiosError.response?.data) {
+      return axiosError.response.data;
+    }
+    
+    return {
+      statusCode: axiosError.response?.status || 500,
+      timestamp: new Date().toISOString(),
+      message: 'message' in error && typeof error.message === 'string' ? error.message : 'An unexpected error occurred',
+      description: 'Please try again later',
+    };
   }
   
   return {
-    statusCode: error.response?.status || 500,
+    statusCode: 500,
     timestamp: new Date().toISOString(),
-    message: error.message || 'An unexpected error occurred',
+    message: 'An unexpected error occurred',
     description: 'Please try again later',
   };
 };

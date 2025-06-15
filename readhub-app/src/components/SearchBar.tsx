@@ -1,14 +1,16 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Filter, TrendingUp } from 'lucide-react';
+import { Search, X, Filter, Hash, BookOpen, Globe } from 'lucide-react';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
-import { useBookSearch } from '../hooks/useBooks';
+import { useBookSearch, useBook, useBooksByCategory, useBooksByLanguage } from '../hooks/useBooks';
 import { createSearchDto } from '../lib/api';
 import type { BookCardData } from '../types/api';
 import { BookCard } from './BookCard';
 import clsx from 'clsx';
+
+type SearchMode = 'text' | 'id' | 'category' | 'language';
 
 interface SearchBarProps {
   onSearchResults?: (results: BookCardData[]) => void;
@@ -18,17 +20,17 @@ interface SearchBarProps {
   className?: string;
 }
 
-const trendingSearches = [
-  'JavaScript Programming',
-  'React Development',
-  'Machine Learning',
-  'Python Basics',
-  'Web Design',
+const searchModes: { key: SearchMode; label: string; icon: React.ReactNode; placeholder: string }[] = [
+  { key: 'text', label: 'Text Search', icon: <Search className="w-4 h-4" />, placeholder: 'Search books by title, description...' },
+  { key: 'id', label: 'Book ID', icon: <Hash className="w-4 h-4" />, placeholder: 'Enter book ID (e.g., 64a1b2c3d4e5f6789abc123)' },
+  { key: 'category', label: 'Category', icon: <BookOpen className="w-4 h-4" />, placeholder: 'Search by categories (e.g., Fiction, Drama)' },
+  { key: 'language', label: 'Language', icon: <Globe className="w-4 h-4" />, placeholder: 'Search by language (e.g., en, ru, es)' },
 ];
+
 
 export const SearchBar: React.FC<SearchBarProps> = ({
   onSearchResults,
-  placeholder = 'Search books, authors, categories...',
+  placeholder,
   showFilters = true,
   autoFocus = false,
   className,
@@ -36,9 +38,13 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   const [query, setQuery] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [selectedFilters] = useState<string[]>([]);
+  const [showModeSelector, setShowModeSelector] = useState(false);
+  const [searchMode, setSearchMode] = useState<SearchMode>('text');
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const currentMode = searchModes.find(mode => mode.key === searchMode)!;
+  const currentPlaceholder = placeholder || currentMode.placeholder;
 
   // Debounced search
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -51,16 +57,55 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Search API call
-  const searchDto = createSearchDto(
+  // Check if query looks like a book ID (24 character hex string)
+  const isBookId = /^[0-9a-fA-F]{24}$/.test(debouncedQuery.trim());
+  
+  // Search by ID - direct book fetch
+  const { data: bookById, isLoading: isLoadingById } = useBook(
+    debouncedQuery.trim(),
+    searchMode === 'id' && isBookId
+  );
+  
+  // Text search
+  const textSearchDto = createSearchDto(
     { searchQuery: debouncedQuery },
     { page: 0, size: 8 }
   );
   
-  const { data: searchResults, isLoading } = useBookSearch(
-    searchDto,
-    debouncedQuery.length >= 2
+  const { data: textSearchResults, isLoading: isLoadingText } = useBookSearch(
+    textSearchDto,
+    searchMode === 'text' && debouncedQuery.length >= 2
   );
+  
+  // Category search
+  const categories = debouncedQuery.split(',').map(c => c.trim()).filter(Boolean);
+  const { data: categoryResults, isLoading: isLoadingCategory } = useBooksByCategory(
+    searchMode === 'category' ? categories : [],
+    { page: 0, size: 8 }
+  );
+  
+  // Language search  
+  const { data: languageResults, isLoading: isLoadingLanguage } = useBooksByLanguage(
+    searchMode === 'language' ? debouncedQuery.trim() : '',
+    { page: 0, size: 8 }
+  );
+  
+  // Determine current results and loading state
+  const searchResults = useMemo(() => {
+    if (searchMode === 'id' && bookById) {
+      return { content: [bookById], totalElements: 1, totalPages: 1, size: 1, number: 0, first: true, last: true, numberOfElements: 1, empty: false };
+    }
+    if (searchMode === 'text') return textSearchResults;
+    if (searchMode === 'category') return categoryResults;
+    if (searchMode === 'language') return languageResults;
+    return null;
+  }, [searchMode, bookById, textSearchResults, categoryResults, languageResults]);
+    
+  const isLoading = searchMode === 'id' ? isLoadingById
+    : searchMode === 'text' ? isLoadingText
+    : searchMode === 'category' ? isLoadingCategory
+    : searchMode === 'language' ? isLoadingLanguage
+    : false;
 
   // Handle click outside
   useEffect(() => {
@@ -68,6 +113,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setShowResults(false);
         setIsExpanded(false);
+        setShowModeSelector(false);
       }
     };
 
@@ -80,9 +126,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     setQuery(value);
     setShowResults(value.length > 0);
     
-    if (value.length >= 2) {
-      setIsExpanded(true);
-    }
+    // Only expand when user has typed something
+    setIsExpanded(value.length > 0);
   }, []);
 
   const handleClearSearch = useCallback(() => {
@@ -92,13 +137,16 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     setIsExpanded(false);
     inputRef.current?.focus();
   }, []);
-
-  const handleTrendingClick = useCallback((trending: string) => {
-    setQuery(trending);
-    setDebouncedQuery(trending);
-    setShowResults(true);
-    setIsExpanded(true);
+  
+  const handleModeChange = useCallback((mode: SearchMode) => {
+    setSearchMode(mode);
+    setShowModeSelector(false);
+    setQuery('');
+    setDebouncedQuery('');
+    setShowResults(false);
+    inputRef.current?.focus();
   }, []);
+
 
   const handleBookSelect = useCallback((book: BookCardData) => {
     setShowResults(false);
@@ -125,21 +173,29 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         transition={{ duration: 0.2, ease: 'easeOut' }}
       >
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-neutral-400" />
+          <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-neutral-400">
+            {currentMode.icon}
+          </div>
           
           <Input
             ref={inputRef}
             type="text"
             value={query}
             onChange={handleInputChange}
-            onFocus={() => setIsExpanded(true)}
-            placeholder={placeholder}
+            onFocus={() => {
+              // Only expand on focus if there's already text
+              if (query.length > 0) {
+                setIsExpanded(true);
+                setShowResults(true);
+              }
+            }}
+            placeholder={currentPlaceholder}
             autoFocus={autoFocus}
             className={clsx(
-              'pl-12 pr-20 py-4 text-base rounded-2xl border-2 transition-all duration-300',
-              isExpanded
-                ? 'border-primary-300 shadow-floating bg-white'
-                : 'border-neutral-200 bg-neutral-50 hover:bg-white hover:border-neutral-300'
+              'pl-12 pr-20 py-2.5 text-sm rounded-xl transition-all duration-300',
+              isExpanded 
+                ? 'glass-search border-primary-300' 
+                : 'bg-neutral-50 border-neutral-200 hover:bg-white hover:border-neutral-300'
             )}
           />
           
@@ -159,27 +215,56 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             )}
             
             {showFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Filter className="w-4 h-4" />}
-                className={clsx(
-                  'px-3 py-2',
-                  selectedFilters.length > 0 && 'text-primary-600 bg-primary-50'
-                )}
-              >
-                {selectedFilters.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary-500 text-white rounded-full">
-                    {selectedFilters.length}
-                  </span>
-                )}
-              </Button>
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Filter className="w-4 h-4" />}
+                  onClick={() => setShowModeSelector(!showModeSelector)}
+                  className={clsx(
+                    'px-3 py-2',
+                    showModeSelector && 'text-primary-600 bg-primary-50'
+                  )}
+                >
+                  {currentMode.label}
+                </Button>
+                
+                <AnimatePresence>
+                  {showModeSelector && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-full mt-2 w-48 bg-white border border-neutral-200 rounded-lg shadow-lg z-50"
+                    >
+                      <div className="p-2">
+                        {searchModes.map((mode) => (
+                          <button
+                            key={mode.key}
+                            onClick={() => handleModeChange(mode.key)}
+                            className={clsx(
+                              'w-full flex items-center space-x-3 px-3 py-2 text-sm rounded-md transition-colors text-left',
+                              searchMode === mode.key
+                                ? 'bg-primary-50 text-primary-700'
+                                : 'hover:bg-neutral-50 text-neutral-700'
+                            )}
+                          >
+                            {mode.icon}
+                            <span>{mode.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             )}
           </div>
         </div>
 
         <AnimatePresence>
-          {(showResults || (isExpanded && !query)) && (
+          {showResults && query.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -205,7 +290,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                   <div className="max-h-80 overflow-y-auto custom-scrollbar">
                     <div className="p-2">
                       <p className="text-xs font-medium text-neutral-500 mb-3 px-4">
-                        Found {searchResults.totalElements} results
+                        {searchMode === 'id' ? 'Book found' : `Found ${searchResults.totalElements} results`} • {currentMode.label}
                       </p>
                       <div className="space-y-1">
                         {searchResults.content.map((book) => (
@@ -222,40 +307,50 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 )}
 
                 {/* No results */}
-                {debouncedQuery.length >= 2 && searchResults?.content?.length === 0 && !isLoading && (
+                {((searchMode === 'text' && debouncedQuery.length >= 2) || 
+                  (searchMode === 'id' && debouncedQuery.length > 0) ||
+                  (searchMode === 'category' && debouncedQuery.length > 0) ||
+                  (searchMode === 'language' && debouncedQuery.length >= 2)) &&
+                 searchResults?.content?.length === 0 && !isLoading && (
                   <div className="p-6 text-center">
-                    <Search className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-                    <p className="text-sm text-neutral-500">No books found for "{debouncedQuery}"</p>
+                    <div className="w-8 h-8 text-neutral-300 mx-auto mb-2">{currentMode.icon}</div>
+                    <p className="text-sm text-neutral-500">
+                      {searchMode === 'id' ? 'Book not found with ID' : 'No books found for'} "{debouncedQuery}"
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      {searchMode === 'id' && 'Make sure the ID is correct (24 character hex string)'}
+                      {searchMode === 'category' && 'Try separating multiple categories with commas'}
+                      {searchMode === 'language' && 'Use language codes like "en", "ru", "es"'}
+                    </p>
                   </div>
                 )}
 
-                {/* Trending searches */}
-                {!query && (
-                  <div className="p-4">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <TrendingUp className="w-4 h-4 text-neutral-400" />
-                      <span className="text-sm font-medium text-neutral-600">Trending Searches</span>
-                    </div>
-                    <div className="space-y-1">
-                      {trendingSearches.map((trending, index) => (
-                        <motion.button
-                          key={trending}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.05 }}
-                          onClick={() => handleTrendingClick(trending)}
-                          className="block w-full text-left px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50 rounded-lg transition-colors"
-                        >
-                          {trending}
-                        </motion.button>
-                      ))}
-                    </div>
+                {/* Show search instructions when query is too short */}
+                {query.length > 0 && query.length < 2 && (
+                  <div className="p-4 text-center">
+                    <p className="text-sm text-neutral-500">
+                      {searchMode === 'text' && 'Type at least 2 characters to search'}
+                      {searchMode === 'id' && 'Enter a 24-character book ID'}
+                      {searchMode === 'category' && 'Enter category names (e.g., Fiction, Programming)'}
+                      {searchMode === 'language' && 'Enter language code (e.g., en, ru, es)'}
+                    </p>
                   </div>
                 )}
               </Card>
             </motion.div>
           )}
         </AnimatePresence>
+        
+        {/* Search mode indicator */}
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute -bottom-6 left-4 text-xs text-neutral-400"
+          >
+            Searching by {currentMode.label.toLowerCase()}
+          </motion.div>
+        )}
       </motion.div>
     </div>
   );

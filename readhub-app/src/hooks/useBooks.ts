@@ -51,11 +51,9 @@ export const useBookSearch = (searchDto: BookSearchDto, enabled = true) => {
 
 // Search by category (using the correct route: /search/by-category)
 export const useBooksByCategory = (categories: string[], pagination: Partial<PaginationDto> = {}) => {
-  const searchDto = createSearchDto({ categories }, pagination);
-  
   return useQuery({
     queryKey: ['books', 'by-category', categories, pagination],
-    queryFn: () => BookAPI.searchByCategory(searchDto),
+    queryFn: () => BookAPI.searchByCategory(categories, pagination),
     enabled: categories.length > 0,
     staleTime: 5 * 60 * 1000,
   });
@@ -63,11 +61,9 @@ export const useBooksByCategory = (categories: string[], pagination: Partial<Pag
 
 // Search by language
 export const useBooksByLanguage = (language: string, pagination: Partial<PaginationDto> = {}) => {
-  const searchDto = createSearchDto({ language }, pagination);
-  
   return useQuery({
     queryKey: ['books', 'by-language', language, pagination],
-    queryFn: () => BookAPI.searchByLanguage(searchDto),
+    queryFn: () => BookAPI.searchByLanguage(language, pagination),
     enabled: !!language,
     staleTime: 5 * 60 * 1000,
   });

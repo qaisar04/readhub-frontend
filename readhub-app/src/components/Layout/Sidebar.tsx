@@ -191,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Reading Stats */}
-          <div className="bg-gradient-to-br from-primary-50 to-accent-50 rounded-xl p-4 border border-primary-100">
+          <div className="glass-stats rounded-xl p-4">
             <h3 className="text-sm font-semibold text-neutral-900 mb-3">Reading Stats</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
